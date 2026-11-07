@@ -1,0 +1,41 @@
+QUIZMON ADMIN UPDATE — DEPLOYMENT NOTES
+
+This archive preserves your original Netlify project structure. The main changes are:
+- public/index.html: adds the shared online student directory to the existing admin panel.
+- netlify/functions/qd-save.mjs: adds admin-authenticated list, password update, and account deletion operations.
+- public/sw.js: bumps the cache name so browsers request the updated site.
+
+DEPLOY TO GITHUB
+1. Extract this ZIP.
+2. In your existing GitHub repository, replace the repository contents with the extracted contents.
+3. Keep the paths exactly as shown:
+   public/index.html
+   public/sw.js
+   netlify/functions/qd-save.mjs
+   netlify.toml
+   package.json
+4. Commit the changes to the branch Netlify deploys (usually main).
+
+NETLIFY ADMIN KEY
+In Netlify > your Quizmon site > Project configuration > Environment variables, add:
+  Name: QUIZMON_ADMIN_KEY
+  Value: Use the separate 64-character key supplied with the ChatGPT instructions. Do not commit the key file to GitHub.
+Save it for the Production context (and Functions runtime), then redeploy.
+Do not put this key in GitHub or in index.html. The admin panel prompts for the same key when it first loads the shared directory.
+
+WHAT THIS DOES
+- Lists records already stored in the shared Netlify Blobs store across devices.
+- Searches names, grades, and sections without case/spacing differences.
+- Shows saved profile and game progress details.
+- Lets the admin set/remove a student's password and delete a shared account.
+- The 5-digit PIN in this version is a sync code used to load progress on another device, not the account password. It is not stored in Netlify Blobs and is not reset from the admin panel.
+- New registrations are uploaded immediately after successful sign-up/login, and logged-in players' records are synced periodically.
+
+IMPORTANT LIMITS
+- Existing records already in Netlify Blobs will appear immediately.
+- Accounts that only exist in an individual browser and have never synced will appear only after that student signs in online once from that browser.
+- Password updates take effect when the student next connects online. A device kept offline may continue using its cached account until it reconnects.
+- Deletion removes cloud records and blocks their previous sync IDs. Copies already saved in student browsers cannot be remotely erased.
+- Netlify Blobs has eventual consistency; a deletion may take a short time to be reflected globally.
+
+The existing game assets, package.json, and netlify.toml from your original ZIP are retained.

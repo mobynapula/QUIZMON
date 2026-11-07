@@ -1,21 +1,176 @@
-import {getStore} from "@netlify/blobs";
-const ok=id=>/^[a-z0-9]{6,60}$/.test(id||"");
-const R=(t,c=200)=>new Response(t,{status:c,headers:{"content-type":"application/json"}});
-export default async (req)=>{
-  const st=getStore("quizmon-saves");
-  if(req.method==="GET"){const u=new URL(req.url),rid=u.searchParams.get("rec"),id=u.searchParams.get("id");
-    if(rid){if(!ok(rid))return R("{}",400);const r=await st.get("r-"+rid,{type:"json"});return r?R(JSON.stringify({q:r.q})):R("{}",404)}
-    if(!ok(id))return R("{}",400);const d=await st.get(id);return d?R(d):R("{}",404)}
-  if(req.method==="POST"){const t=await req.text();if(t.length>500000)return R("{}",413);
-    let j;try{j=JSON.parse(t)}catch(e){return R("{}",400)}
-    if(!ok(j.id))return R("{}",400);
-    if(j.kind==="rec"){if(!ok(j.key)||!j.q||!j.ah)return R("{}",400);
-      const old=await st.get("r-"+j.id,{type:"json"});
-      if(old&&old.ah!==j.ah&&old.ah!==j.prev)return R("{}",403);
-      await st.setJSON("r-"+j.id,{q:String(j.q).slice(0,80),ah:String(j.ah),key:j.key,f:old?old.f||0:0,t:old?old.t||0:0});return R("{}")}
-    if(j.kind==="recover"){const r=await st.get("r-"+j.id,{type:"json"});if(!r)return R("{}",404);
-      if((r.f||0)>=8&&Date.now()-(r.t||0)<900000)return R("{}",429);
-      if(r.ah!==j.ah){r.f=(r.f||0)+1;r.t=Date.now();await st.setJSON("r-"+j.id,r);return R("{}",403)}
-      r.f=0;await st.setJSON("r-"+j.id,r);const d=await st.get(r.key);return d?R(JSON.stringify({data:JSON.parse(d)})):R("{}",404)}
-    if(!j.data)return R("{}",400);await st.set(j.id,JSON.stringify(j.data));return R("{}")}
-  return R("{}",405)};
+import { getStore } from "@netlify/blobs";
+import { createHash, timingSafeEqual } from "node:crypto";
+
+const ok = id => /^[a-z0-9]{6,60}$/.test(id || "");
+const R = (body, status = 200) => new Response(body, {
+  status,
+  headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+});
+const J = (value, status = 200) => R(JSON.stringify(value), status);
+const norm = value => String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+const identityKey = (name, grade, section) => "deleted-account-" + createHash("sha256").update(`${norm(name)}|${String(grade ?? "")}|${norm(section)}`).digest("hex");
+const deletedIdKey = id => "deleted-id-" + id;
+const adminSecret = () => String(process.env.QUIZMON_ADMIN_KEY || "");
+
+function authorized(req) {
+  const expected = Buffer.from(adminSecret());
+  const supplied = Buffer.from(String(req.headers.get("x-quizmon-admin") || ""));
+  return expected.length > 0 && expected.length === supplied.length && timingSafeEqual(expected, supplied);
+}
+
+async function adminAction(req, store, body) {
+  if (!adminSecret()) return J({ error: "Admin access is not configured. Add QUIZMON_ADMIN_KEY in Netlify environment variables." }, 503);
+  if (!authorized(req)) return J({ error: "Admin key not accepted." }, 401);
+
+  if (body.kind === "admin:list") {
+    const { blobs } = await store.list();
+    const entries = blobs.filter(item => ok(item.key));
+    const players = await Promise.all(entries.map(async item => {
+      try {
+        const data = await store.get(item.key, { type: "json" });
+        if (!data || typeof data !== "object" || !data.n) return null;
+        const safe = { ...data };
+        delete safe.ph;
+        delete safe.sah;
+        delete safe.pin;
+        delete safe.sq;
+        return { id: item.key, ids: [item.key], data: safe };
+      } catch {
+        return null;
+      }
+    }));
+    return J({ players: players.filter(Boolean) });
+  }
+
+  if (body.kind === "admin:update") {
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : [body.id]).filter(ok))];
+    if (!ids.length || !body.patch || typeof body.patch !== "object" || Array.isArray(body.patch)) return J({ error: "Invalid account update." }, 400);
+    const patch = {};
+    if (typeof body.patch.ph === "string" && body.patch.ph.length <= 100) patch.ph = body.patch.ph;
+    if (!Object.keys(patch).length) return J({ error: "No supported account changes were supplied." }, 400);
+    let updated = 0;
+    for (const id of ids) {
+      const data = await store.get(id, { type: "json" });
+      if (!data || typeof data !== "object" || !data.n) continue;
+      await store.set(id, JSON.stringify({ ...data, ...patch }));
+      updated++;
+    }
+    if (!updated) return J({ error: "Account not found." }, 404);
+    return J({ ok: true, updated });
+  }
+
+  if (body.kind === "admin:delete") {
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : [body.id]).filter(ok))];
+    if (!ids.length) return J({ error: "Invalid account ID." }, 400);
+    const records = [];
+    for (const id of ids) {
+      const data = await store.get(id, { type: "json" });
+      if (data && typeof data === "object" && data.n) records.push({ id, data });
+    }
+    if (!records.length) return J({ error: "Account not found." }, 404);
+    const first = records[0].data;
+    const identity = `${norm(first.n)}|${String(first.g ?? (first.P && first.P.g) ?? "")}|${norm(first.sec ?? (first.P && first.P.sec) ?? "")}`;
+    for (const entry of records) {
+      const d = entry.data;
+      const other = `${norm(d.n)}|${String(d.g ?? (d.P && d.P.g) ?? "")}|${norm(d.sec ?? (d.P && d.P.sec) ?? "")}`;
+      if (other !== identity) return J({ error: "The selected records do not belong to the same student account." }, 400);
+    }
+    await store.set(identityKey(first.n, first.g ?? (first.P && first.P.g), first.sec ?? (first.P && first.P.sec)), String(Date.now()));
+    const idSet = new Set(records.map(x => x.id));
+    await Promise.all(records.map(async ({ id }) => {
+      await store.set(deletedIdKey(id), String(Date.now()));
+      await store.delete(id);
+    }));
+    const { blobs: recoveryBlobs } = await store.list({ prefix: "r-" });
+    await Promise.all(recoveryBlobs.map(async item => {
+      try {
+        const recovery = await store.get(item.key, { type: "json" });
+        if (recovery && idSet.has(recovery.key)) await store.delete(item.key);
+      } catch {
+        // Keep an unreadable recovery record rather than risk deleting an unrelated item.
+      }
+    }));
+    return J({ ok: true, deleted: records.length });
+  }
+
+  return J({ error: "Unknown admin action." }, 400);
+}
+
+export default async (req) => {
+  const store = getStore("quizmon-saves");
+  try {
+    if (req.method === "GET") {
+      const url = new URL(req.url);
+      const recoveryId = url.searchParams.get("rec");
+      const id = url.searchParams.get("id");
+      if (recoveryId) {
+        if (!ok(recoveryId)) return R("{}", 400);
+        const record = await store.get("r-" + recoveryId, { type: "json" });
+        if (!record) return R("{}", 404);
+        if (await store.get(deletedIdKey(record.key))) return R("{}", 410);
+        return J({ q: record.q });
+      }
+      if (!ok(id)) return R("{}", 400);
+      if (await store.get(deletedIdKey(id))) return R("{}", 410);
+      const name = url.searchParams.get("n"), grade = url.searchParams.get("g"), section = url.searchParams.get("sec");
+      if (name && grade && section && await store.get(identityKey(name, grade, section))) return R("{}", 410);
+      const data = await store.get(id);
+      return data ? R(data) : R("{}", 404);
+    }
+
+    if (req.method === "POST") {
+      const raw = await req.text();
+      if (raw.length > 500000) return R("{}", 413);
+      let body;
+      try { body = JSON.parse(raw); } catch { return R("{}", 400); }
+
+      if (typeof body.kind === "string" && body.kind.startsWith("admin:")) return await adminAction(req, store, body);
+      if (!ok(body.id)) return R("{}", 400);
+
+      if (body.kind === "rec") {
+        if (!ok(body.key) || !body.q || !body.ah) return R("{}", 400);
+        if (await store.get(deletedIdKey(body.key))) return R("{}", 410);
+        const old = await store.get("r-" + body.id, { type: "json" });
+        if (old && old.ah !== body.ah && old.ah !== body.prev) return R("{}", 403);
+        await store.setJSON("r-" + body.id, {
+          q: String(body.q).slice(0, 80),
+          ah: String(body.ah),
+          key: body.key,
+          f: old ? old.f || 0 : 0,
+          t: old ? old.t || 0 : 0,
+        });
+        return R("{}");
+      }
+
+      if (body.kind === "recover") {
+        const record = await store.get("r-" + body.id, { type: "json" });
+        if (!record || await store.get(deletedIdKey(record.key))) return R("{}", 404);
+        if ((record.f || 0) >= 8 && Date.now() - (record.t || 0) < 900000) return R("{}", 429);
+        if (record.ah !== body.ah) {
+          record.f = (record.f || 0) + 1;
+          record.t = Date.now();
+          await store.setJSON("r-" + body.id, record);
+          return R("{}", 403);
+        }
+        record.f = 0;
+        await store.setJSON("r-" + body.id, record);
+        const data = await store.get(record.key);
+        return data ? J({ data: JSON.parse(data) }) : R("{}", 404);
+      }
+
+      if (!body.data) return R("{}", 400);
+      if (await store.get(deletedIdKey(body.id))) return R("{}", 410);
+      if (body.data.n && body.data.g != null && body.data.sec) {
+        const deletedIdentity = identityKey(body.data.n, body.data.g, body.data.sec);
+        if (await store.get(deletedIdentity)) return R("{}", 410);
+      }
+      await store.set(body.id, JSON.stringify(body.data));
+      return R("{}");
+    }
+
+    return R("{}", 405);
+  } catch (error) {
+    console.error("qd-save error:", error);
+    return J({ error: "The save service could not complete the request." }, 500);
+  }
+};
