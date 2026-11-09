@@ -426,6 +426,68 @@ body,body *{font-family:var(--uf)!important}
    DotGothic16 is primary; Pixelify Sans is the secondary pixel face. */
 html, body, body *, button, input, select, textarea { font-family: var(--uf) !important; }
 .chip.required:disabled{opacity:1;filter:none;background:var(--gold);color:#1a1530;border-color:#ffe6a6;cursor:not-allowed;box-shadow:inset -3px -3px 0 rgba(0,0,0,.22),inset 3px 3px 0 rgba(255,255,255,.35),0 0 0 2px #000}
+
+/* QUIZMON V18: keep battle information out of the pixel-art scene on phones */
+@media (max-width: 600px) {
+  #bsc {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    overflow: hidden;
+  }
+  #bcv {
+    order: 0;
+    flex: 0 0 auto;
+    width: 100%;
+    height: auto;
+  }
+  #fbx, #pbx {
+    position: relative !important;
+    inset: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    box-sizing: border-box;
+    margin: 0;
+    border-radius: 0;
+    border-width: 3px 0 0;
+    padding: 7px 10px;
+  }
+  #fbx {
+    order: 1;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  #fbx #bs {
+    font-size: 10px !important;
+    line-height: 1.45;
+    opacity: 1 !important;
+    overflow-wrap: anywhere;
+  }
+  #pbx {
+    order: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    grid-auto-flow: column;
+    gap: 3px 12px;
+  }
+  #pbx b { font-size: 12px; }
+  #pbx #kt, #pbx #hpt { font-size: 10px !important; }
+  #bexit { z-index: 5; }
+  #bnr {
+    order: 3;
+    position: relative;
+    inset: auto;
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
 </style></head><body>
 <datalist id="sql"><option value="What was the name of my first pet?"><option value="What is my favorite teacher's last name?"><option value="What street did I grow up on?"><option value="What is my best friend's nickname?"><option value="What is my favorite food?"><option value="What was my first school called?"></datalist>
 <div id="fg" hidden style="position:fixed;inset:0;z-index:60;background:rgba(10,7,22,.96);display:grid;place-items:center;padding:12px;overflow:auto"><div class="card" style="max-width:420px;width:100%"><h2>Recover password or grade</h2><input id="fgn" maxlength="16" placeholder="Player name" autocomplete="off"><div style="height:6px"></div><select id="fgg" style="width:100%;padding:10px"><option value="11">11</option><option value="12">12</option></select><div style="height:6px"></div><input id="fgs" maxlength="16" placeholder="Section name" autocomplete="off"><button class="btn go" id="fgfind" style="margin-top:8px">Find my question</button>
@@ -790,7 +852,7 @@ function genMath(g,t=1){let q,a;
  else{const f=2+r(8),d=2+r(5);if(t==0){q=`Arithmetic sequence: first term ${f}, common difference ${d}. 5th term?`;a=f+4*d}else if(t==1){q=`Arithmetic sequence: first term ${f}, common difference ${d}. 10th term?`;a=f+9*d}else{const e=2+r(3),z=2+r(2);q=`Geometric sequence: first term ${e}, ratio ${z}. 5th term?`;a=e*z**4}}
  const w=new Set();while(w.size<3){const v=a+(r(9)-4)*(1+r(2));if(v!=a&&v>0)w.add(v)}
  return[q,''+a,...[...w].map(String)]}
-var U=null,VC=11,VR=11;let P={name:'',sec:'',fill:1,gs:(window.matchMedia&&matchMedia('(pointer:coarse)').matches?112:100),g:11,subs:[],snd:1,mvol:80,menuVol:70,gameVol:65,combatVol:75,big:0,df:1,mode:1,dn:1,hold:1,rd:8,fov:11,lay:'ds',hand:0,pad:1,ui:100,hs:100,op:85,bg1:'#5a35a8',bg2:'#1a1530',tint:1,cbg:1,hpb:1},S=null,loc,map,npcs=[],mons=[],pl,start,busy=false,tk=0,B,cur,last,dq=[],dcb,mt,ac,WORLD;
+var U=null,VC=11,VR=11;let P={name:'',sec:'',fill:1,gs:(window.matchMedia&&matchMedia('(pointer:coarse)').matches?112:100),g:11,subs:[],snd:1,mvol:100,menuVol:90,gameVol:90,combatVol:95,big:0,df:1,mode:1,dn:1,hold:1,rd:8,fov:11,lay:'ds',hand:0,pad:1,ui:100,hs:100,op:85,bg1:'#5a35a8',bg2:'#1a1530',tint:1,cbg:1,hpb:1},S=null,loc,map,npcs=[],mons=[],pl,start,busy=false,tk=0,B,cur,last,dq=[],dcb,mt,ac,WORLD;
 const cv=$('#cv'),c=cv.getContext('2d'),mx=()=>40+S.lv*8,SOL=new Set('hjoy#ONAYTRW~dZKqSsFHLMrwkt$aCVvumiQ'.split(''));
 // Enemy subjects are assigned with a deliberate balance: 30% CSS and 70% the selected focus subject(s).
 // A library-applied subject temporarily takes priority; unapplying it restores New Game / Settings selections.
@@ -810,7 +872,7 @@ const rs=()=>{
  if(!css)return focus[r(focus.length)]||'Math';
  return Math.random()<.30?css:focus[r(focus.length)];
 };
-function bp(f,d=.1){if(!P.snd)return;try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;g.gain.value=.04*(Number(P.mvol??80)/100);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}}
+function bp(f,d=.1){if(!P.snd)return;try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;g.gain.value=.06*(Number(P.mvol??100)/100);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}}
 // Lightweight original chiptune loops. Music is synthesized locally; no external audio files.
 let musicTimer=null,musicStep=0,musicScene='';
 const MUSIC={
@@ -818,6 +880,13 @@ const MUSIC={
  game:{tempo:210,notes:[262,330,392,330,294,349,440,349,262,330,392,523,440,392,330,294]},
  combat:{tempo:145,notes:[196,196,294,196,220,220,330,220,174,174,262,174,196,220,262,294]}
 };
+function unlockMusic(){
+ try{
+  if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();
+  if(ac.state==='suspended')ac.resume();
+  musicUpdate();
+ }catch(e){}
+}
 function musicUpdate(){
  try{
   if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();
@@ -833,10 +902,21 @@ function musicUpdate(){
    const v=Number(P.mvol??80)/100*Number(({menu:P.menuVol,game:P.gameVol,combat:P.combatVol})[scene]??70)/100;
    if(v<=0)return;
    const f=track.notes[musicStep++%track.notes.length];
-   try{const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(.0001,ac.currentTime);g.gain.linearRampToValueAtTime(.018*v,ac.currentTime+.012);g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+.19);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+.2)}catch(e){}
+   try{const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(.0001,ac.currentTime);g.gain.linearRampToValueAtTime(.075*v,ac.currentTime+.012);g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+.19);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+.2)}catch(e){}
   },track.tempo);
  }catch(e){}
 }
+let musicUnlockBound=false;
+function bindMusicUnlock(){
+ if(musicUnlockBound)return;musicUnlockBound=true;
+ const once=()=>{unlockMusic();};
+ document.addEventListener('pointerdown',once,{once:true,passive:true});
+ document.addEventListener('keydown',once,{once:true});
+ document.addEventListener('touchstart',once,{once:true,passive:true});
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)unlockMusic();});
+ window.addEventListener('focus',unlockMusic);
+}
+bindMusicUnlock();
 
 function snap(){qzSync();S.pos=loc=='bush'&&S.ret?{l:'world',x:S.ret.x,y:S.ret.y}:loc=='shop'?{l:'world',x:SHW?28:12,y:SHW?11:9}:{l:loc,x:pl.x,y:pl.y};if(loc=='dun')S.dg={m:map.map(r=>r.join('')),o:mons,s:start}}
 const MAXS=10;
