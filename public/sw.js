@@ -1,4 +1,4 @@
-const C='quizmon-v17-audio-v18',CSS="https://fonts.googleapis.com/css2?family=DotGothic16&family=Pixelify+Sans:wght@400..700&display=swap";
+const C='quizmon-v19-volume250',CSS="https://fonts.googleapis.com/css2?family=DotGothic16&family=Pixelify+Sans:wght@400..700&display=swap";
 async function pre(c){try{const r=await fetch(CSS),t=await r.clone().text();await c.put(CSS,r);await Promise.all([...t.matchAll(/url\(([^)]+)\)/g)].map(m=>fetch(m[1]).then(x=>c.put(m[1],x)).catch(()=>{})))}catch(e){}}
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(async c=>{await c.addAll(['./','./index.html']).catch(()=>{});await pre(c)}));self.skipWaiting()});
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==C).map(x=>caches.delete(x)))).then(()=>clients.claim())));
