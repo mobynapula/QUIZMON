@@ -880,41 +880,99 @@ const MUSIC={
  game:{tempo:210,notes:[262,330,392,330,294,349,440,349,262,330,392,523,440,392,330,294]},
  combat:{tempo:145,notes:[196,196,294,196,220,220,330,220,174,174,262,174,196,220,262,294]}
 };
-function unlockMusic(){
+let musicUnlockBound=false;
+let musicUserUnlocked=false;
+let musicPausedForBackground=!!document.hidden;
+function stopMusicForBackground(){
+ musicPausedForBackground=true;
+ if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
+ musicScene='';
+ // Suspending the AudioContext also silences notes that are already in flight.
+ if(ac&&ac.state==='running'){
+  try{const pending=ac.suspend();if(pending&&pending.catch)pending.catch(()=>{});}catch(e){}
+ }
+}
+function resumeMusicInForeground(){
+ if(document.hidden||!musicUserUnlocked)return;
+ musicPausedForBackground=false;
  try{
   if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();
-  if(ac.state==='suspended')ac.resume();
+  if(ac.state==='suspended'){
+   const pending=ac.resume();
+   if(pending&&pending.then){pending.then(()=>{if(!document.hidden&&!musicPausedForBackground)musicUpdate();}).catch(()=>{});return;}
+  }
+  musicUpdate();
+ }catch(e){}
+}
+function unlockMusic(){
+ // Called from a real user gesture. Remember that the browser has received
+ // the interaction needed to permit audio playback for this page session.
+ musicUserUnlocked=true;
+ if(document.hidden){stopMusicForBackground();return;}
+ musicPausedForBackground=false;
+ try{
+  if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();
+  if(ac.state==='suspended'){
+   const pending=ac.resume();
+   if(pending&&pending.then){pending.then(()=>{if(!document.hidden&&!musicPausedForBackground)musicUpdate();}).catch(()=>{});return;}
+  }
   musicUpdate();
  }catch(e){}
 }
 function musicUpdate(){
  try{
-  if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();
+  // Never create or resume audio while the tab/app is in the background.
+  if(document.hidden||musicPausedForBackground){
+   if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
+   musicScene='';
+   return;
+  }
+  if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();
+  if(ac.state==='suspended'){
+   if(!musicUserUnlocked)return;
+   const pending=ac.resume();
+   if(pending&&pending.then){pending.then(()=>{if(!document.hidden&&!musicPausedForBackground)musicUpdate();}).catch(()=>{});return;}
+  }
   const scene=!$('#battle').hidden?'combat':!$('#game').hidden?'game':'menu';
-  const vol=Number(P.mvol??80)/100*Number(({menu:P.menuVol,game:P.gameVol,combat:P.combatVol})[scene]??70)/100;
-  if(!P.snd||vol<=0){if(musicTimer){clearInterval(musicTimer);musicTimer=null}musicScene='';return}
+  const vol=Number(P.mvol??100)/100*Number(({menu:P.menuVol,game:P.gameVol,combat:P.combatVol})[scene]??90)/100;
+  if(!P.snd||vol<=0){if(musicTimer){clearInterval(musicTimer);musicTimer=null;}musicScene='';return;}
   if(musicScene===scene&&musicTimer)return;
   if(musicTimer)clearInterval(musicTimer);
   musicScene=scene;musicStep=0;
   const track=MUSIC[scene];
   musicTimer=setInterval(()=>{
-   if(!ac||!P.snd)return;
-   const v=Number(P.mvol??80)/100*Number(({menu:P.menuVol,game:P.gameVol,combat:P.combatVol})[scene]??70)/100;
+   if(!ac||!P.snd||document.hidden||musicPausedForBackground){
+    if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
+    musicScene='';
+    return;
+   }
+   const v=Number(P.mvol??100)/100*Number(({menu:P.menuVol,game:P.gameVol,combat:P.combatVol})[scene]??90)/100;
    if(v<=0)return;
    const f=track.notes[musicStep++%track.notes.length];
-   try{const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(.0001,ac.currentTime);g.gain.linearRampToValueAtTime(.075*v,ac.currentTime+.012);g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+.19);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+.2)}catch(e){}
+   try{const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;g.gain.setValueAtTime(.0001,ac.currentTime);g.gain.linearRampToValueAtTime(.075*v,ac.currentTime+.012);g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+.19);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+.2);}catch(e){}
   },track.tempo);
  }catch(e){}
 }
-let musicUnlockBound=false;
 function bindMusicUnlock(){
  if(musicUnlockBound)return;musicUnlockBound=true;
- const once=()=>{unlockMusic();};
+ const once=()=>unlockMusic();
  document.addEventListener('pointerdown',once,{once:true,passive:true});
  document.addEventListener('keydown',once,{once:true});
  document.addEventListener('touchstart',once,{once:true,passive:true});
- document.addEventListener('visibilitychange',()=>{if(!document.hidden)unlockMusic();});
- window.addEventListener('focus',unlockMusic);
+ // Browsers fire visibilitychange when switching tabs/apps or locking a phone.
+ document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)stopMusicForBackground();
+  else resumeMusicInForeground();
+ });
+ // Also cover browser/page lifecycle transitions, including mobile page freeze.
+ window.addEventListener('pagehide',stopMusicForBackground);
+ window.addEventListener('beforeunload',stopMusicForBackground);
+ window.addEventListener('freeze',stopMusicForBackground);
+ window.addEventListener('pageshow',()=>{if(!document.hidden)resumeMusicInForeground();});
+ window.addEventListener('resume',()=>{if(!document.hidden)resumeMusicInForeground();});
+ // Some mobile browsers briefly blur a page before visibility changes.
+ window.addEventListener('blur',stopMusicForBackground);
+ window.addEventListener('focus',()=>{if(!document.hidden)resumeMusicInForeground();});
 }
 bindMusicUnlock();
 
